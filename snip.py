@@ -62,7 +62,7 @@ def is_ignored(filepath):
     check = subprocess.run(["git", "check-ignore", "-v", filepath], cwd=REPO_PATH, capture_output=True, text=True)
     return bool(check.stdout.strip())  # Returns True if file is ignored
 
-# Function to commit and push changes to Git
+# Function to automatically fix Git errors and push changes
 def commit_and_push(filename):
     try:
         # Ensure this is a Git repository
@@ -74,24 +74,27 @@ def commit_and_push(filename):
         if is_ignored("uploads"):
             messagebox.showerror("Git Error", "❌ The 'uploads/' folder is ignored in .gitignore! Remove it and try again.")
             return
-        
-        # Add the entire uploads folder (ensuring new files are tracked)
-        subprocess.run(["git", "add", "uploads"], cwd=REPO_PATH, check=True)
-        
-        # Commit the changes
-        commit_result = subprocess.run(["git", "commit", "-m", f"📸 Added screenshot: {filename}"], cwd=REPO_PATH, capture_output=True, text=True)
-        if commit_result.stderr:
-            print("❌ Git Commit Error:", commit_result.stderr)
-            messagebox.showerror("Git Error", f"Commit failed: {commit_result.stderr}")
-            return
 
-        # Push to remote repository
+        # Add all changes (including new screenshots)
+        subprocess.run(["git", "add", "uploads"], cwd=REPO_PATH, check=True)
+
+        # Auto-fix unstaged changes
+        commit_result = subprocess.run(["git", "commit", "-am", f"📸 Auto-fix: Added screenshot {filename}"], cwd=REPO_PATH, capture_output=True, text=True)
+        if "nothing to commit" in commit_result.stdout:
+            print("⚠️ No new changes to commit.")
+        
+        # Auto-fix out-of-sync issues by pulling with rebase
+        subprocess.run(["git", "pull", "--rebase", "origin", "main"], cwd=REPO_PATH, check=True)
+
+        # Push changes to remote repository
         push_result = subprocess.run(["git", "push", "origin", "main"], cwd=REPO_PATH, capture_output=True, text=True)
-        if push_result.stderr:
+        
+        if "rejected" in push_result.stderr or "error" in push_result.stderr.lower():
             print("❌ Git Push Error:", push_result.stderr)
             messagebox.showerror("Git Error", f"Push failed: {push_result.stderr}")
             return
-
+        
+        # Generate and copy the image link
         image_link = f"https://cdnfr.galaxyteam.us.kg/uploads/{filename}"
         pyperclip.copy(image_link)
         messagebox.showinfo("Success", f"✅ Screenshot uploaded!\nLink copied: {image_link}")
