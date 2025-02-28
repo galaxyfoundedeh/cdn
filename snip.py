@@ -48,24 +48,57 @@ def on_release(event):
     
     filename = f"{filename}.png"
     file_path = os.path.join(UPLOAD_FOLDER, filename)
-    screenshot.save(file_path, "PNG")
-    
-    commit_and_push(filename)
+
+    try:
+        screenshot.save(file_path, "PNG")
+        print(f"✅ Screenshot saved: {file_path}")  # Debug print
+        commit_and_push(filename)
+    except Exception as e:
+        messagebox.showerror("Error", f"❌ Failed to save screenshot: {str(e)}")
+        return
+
+# Function to check if uploads/ is ignored
+def is_ignored(filepath):
+    check = subprocess.run(["git", "check-ignore", "-v", filepath], cwd=REPO_PATH, capture_output=True, text=True)
+    return bool(check.stdout.strip())  # Returns True if file is ignored
 
 # Function to commit and push changes to Git
 def commit_and_push(filename):
     try:
+        # Ensure this is a Git repository
         if not os.path.exists(os.path.join(REPO_PATH, ".git")):
+            messagebox.showerror("Error", "❌ Not a Git repository!")
             return
         
-        subprocess.run(["git", "add", os.path.join("uploads", filename)], cwd=REPO_PATH, check=True)
-        subprocess.run(["git", "commit", "-m", f"Added screenshot: {filename}"], cwd=REPO_PATH, check=True)
-        subprocess.run(["git", "push", "origin", "main"], cwd=REPO_PATH, check=True)
+        # Check if uploads/ folder is ignored
+        if is_ignored("uploads"):
+            messagebox.showerror("Git Error", "❌ The 'uploads/' folder is ignored in .gitignore! Remove it and try again.")
+            return
         
+        # Add the entire uploads folder (ensuring new files are tracked)
+        subprocess.run(["git", "add", "uploads"], cwd=REPO_PATH, check=True)
+        
+        # Commit the changes
+        commit_result = subprocess.run(["git", "commit", "-m", f"📸 Added screenshot: {filename}"], cwd=REPO_PATH, capture_output=True, text=True)
+        if commit_result.stderr:
+            print("❌ Git Commit Error:", commit_result.stderr)
+            messagebox.showerror("Git Error", f"Commit failed: {commit_result.stderr}")
+            return
+
+        # Push to remote repository
+        push_result = subprocess.run(["git", "push", "origin", "main"], cwd=REPO_PATH, capture_output=True, text=True)
+        if push_result.stderr:
+            print("❌ Git Push Error:", push_result.stderr)
+            messagebox.showerror("Git Error", f"Push failed: {push_result.stderr}")
+            return
+
         image_link = f"https://cdnfr.galaxyteam.us.kg/uploads/{filename}"
         pyperclip.copy(image_link)
-        messagebox.showinfo("Success", f"Screenshot uploaded!\nLink copied: {image_link}")
-    except subprocess.CalledProcessError:
+        messagebox.showinfo("Success", f"✅ Screenshot uploaded!\nLink copied: {image_link}")
+        print(f"🔗 Link copied: {image_link}")
+
+    except subprocess.CalledProcessError as e:
+        print("❌ Exception:", str(e))
         messagebox.showerror("Error", "Git operation failed.")
 
 # Function to trigger selection
