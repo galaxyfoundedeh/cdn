@@ -2,88 +2,132 @@ import tkinter as tk
 from tkinter import simpledialog
 import os
 import subprocess
-import pyperclip
 from PIL import ImageGrab
 
-# Configure storage folder inside the Git repo
-GIT_REPO_PATH = os.path.abspath("public/uploads")
-os.makedirs(GIT_REPO_PATH, exist_ok=True)
+# Set the upload folder to your specific path
+UPLOAD_FOLDER = os.path.join(os.path.expanduser("~"), "Desktop", "cdn", "uploads")
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Variables for selection
+# Git repository path
+REPO_PATH = os.path.join(os.path.expanduser("~"), "Desktop", "cdn")
+
+# Git user details
+GIT_USERNAME = "galaxyfoundedeh"
+GIT_EMAIL = "kiley.phd@go.sfcollege.edu"  # Replace with the actual email linked to the Git account
+
+# Global variables for selection
 start_x, start_y, end_x, end_y = 0, 0, 0, 0
 
-# Start selection
+# Function to start selection
 def on_press(event):
     global start_x, start_y
     start_x, start_y = event.x, event.y
     canvas.delete("rect")  # Clear previous selection
 
-# Draw selection rectangle
+# Function to update selection rectangle
 def on_drag(event):
     global end_x, end_y
     end_x, end_y = event.x, event.y
-    canvas.delete("rect")
+    canvas.delete("rect")  # Remove old rectangle
     canvas.create_rectangle(start_x, start_y, end_x, end_y, outline="red", width=2, tags="rect")
 
-# Capture screenshot, save, and push to Git
+# Function to capture selected area and save
 def on_release(event):
     global start_x, start_y, end_x, end_y
-    root.withdraw()  # Hide UI after selection
+    selection_window.withdraw()  # Hide the selection UI after capturing
 
-    # Sort coordinates to ensure correct selection
+    # Ensure correct coordinates
     x1, x2 = sorted([start_x, end_x])
     y1, y2 = sorted([start_y, end_y])
 
-    # Capture selected area
+    # Capture the selected area
     screenshot = ImageGrab.grab(bbox=(x1, y1, x2, y2))
 
-    # Ask user for a filename
-    filename = simpledialog.askstring("Save Image", "Enter filename (without extension):")
+    # Ask the user for a filename
+    filename = simpledialog.askstring("Save Image", "Enter a filename (without extension):")
     if not filename:
         print("❌ No filename entered. Cancelling.")
-        root.quit()
         return
-
+    
+    # Remove any problematic characters from filename
+    filename = "".join(c for c in filename if c.isalnum() or c in "-_ ").rstrip()
+    if not filename:
+        print("❌ Invalid filename. Cancelling.")
+        return
+    
     filename = f"{filename}.png"
-    file_path = os.path.join(GIT_REPO_PATH, filename)
+    file_path = os.path.join(UPLOAD_FOLDER, filename)
 
     # Save the screenshot
     screenshot.save(file_path, "PNG")
     print(f"✅ Screenshot saved as: {file_path}")
 
-    # Push to Git
-    push_to_git(filename)
+    # Commit and push to Git
+    commit_and_push(filename)
 
-# Push to Git & copy URL to clipboard
-def push_to_git(filename):
+# Function to commit and push changes to Git
+def commit_and_push(filename):
     try:
-        print("📤 Pushing to Git...")
+        if not os.path.exists(os.path.join(REPO_PATH, ".git")):
+            print("❌ Error: Not a Git repository. Run 'git init' in the repo folder.")
+            return
 
-        # Run Git commands
-        subprocess.run(["git", "add", f"public/uploads/{filename}"], check=True)
-        subprocess.run(["git", "commit", "-m", f"Add screenshot {filename}"], check=True)
-        subprocess.run(["git", "push"], check=True)
+        # Set the correct Git user
+        subprocess.run(["git", "config", "--global", "user.name", GIT_USERNAME], cwd=REPO_PATH, check=True)
+        subprocess.run(["git", "config", "--global", "user.email", GIT_EMAIL], cwd=REPO_PATH, check=True)
+        
+        print(f"🚀 Using Git account: {GIT_USERNAME}")
 
-        # Generate file URL
-        file_url = f"https://your-vercel-app.vercel.app/uploads/{filename}"
-        pyperclip.copy(file_url)
+        print("🚀 Adding file to Git...")
+        subprocess.run(["git", "add", "--all"], cwd=REPO_PATH, check=True)  # Stage ALL changes
 
-        print(f"✅ Uploaded! URL copied to clipboard: {file_url}")
+        print("📝 Committing changes...")
+        subprocess.run(["git", "commit", "-m", f"Added screenshot: {filename}"], cwd=REPO_PATH, check=True)
+
+        print("📌 Stashing any unstaged changes...")
+        subprocess.run(["git", "stash"], cwd=REPO_PATH, check=True)  # Stash changes to avoid conflict
+
+        print("⬇️ Pulling latest changes...")
+        subprocess.run(["git", "pull", "--rebase", "origin", "main"], cwd=REPO_PATH, check=True)
+
+        print("📤 Pushing to remote repository...")
+        subprocess.run(["git", "push", "origin", "main"], cwd=REPO_PATH, check=True)
+
+        print("📌 Applying stashed changes back...")
+        subprocess.run(["git", "stash", "pop"], cwd=REPO_PATH, check=True)  # Reapply stashed changes
+
+        print("✅ Deployment complete!")
 
     except subprocess.CalledProcessError as e:
         print(f"❌ Git error: {e}")
 
-# Create UI for selection
-root = tk.Tk()
-root.attributes('-fullscreen', True)
-root.attributes('-alpha', 0.3)  # Transparent overlay
-root.configure(bg="black")
+# Function to trigger selection UI
+def trigger_selection():
+    print("🎯 Screenshot selection triggered!")
+    selection_window.deiconify()
 
-canvas = tk.Canvas(root, cursor="cross", bg="black")
+# Create the main control UI
+root = tk.Tk()
+root.title("Screenshot Tool")
+root.geometry("300x200")
+
+# Create a button to trigger selection
+trigger_button = tk.Button(root, text="Click It!", command=trigger_selection, font=("Arial", 14), padx=20, pady=10)
+trigger_button.pack(pady=50)
+
+# Create a fullscreen transparent window for selection (initially hidden)
+selection_window = tk.Toplevel(root)
+selection_window.attributes('-fullscreen', True)
+selection_window.attributes('-alpha', 0.3)  # Make it semi-transparent
+selection_window.configure(bg="black")
+selection_window.withdraw()  # Hide until triggered
+
+# Create a canvas to draw selection
+canvas = tk.Canvas(selection_window, cursor="cross", bg="black")
 canvas.pack(fill="both", expand=True)
 canvas.bind("<ButtonPress-1>", on_press)
 canvas.bind("<B1-Motion>", on_drag)
 canvas.bind("<ButtonRelease-1>", on_release)
 
-# Run the application
+# Run the main UI loop
 root.mainloop()
